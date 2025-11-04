@@ -76,10 +76,10 @@ model, classes = load_from_ckpt(MODEL_PATH)
 # ---------------------------------------------------
 # Load model 
 # ---------------------------------------------------
-MODEL_PATH = "best.pt"
-INFER_IMG_SIZE = 224
-RECYCLE_THRESHOLD = 0.2  # your chosen threshold
-model, classes = load_from_ckpt(MODEL_PATH)
+# MODEL_PATH = "best.pt"
+# INFER_IMG_SIZE = 224
+# RECYCLE_THRESHOLD = 0.2 
+# model, classes = load_from_ckpt(MODEL_PATH)
 
 # ---------------------------------------------------
 # GPIO + Servo Setup
@@ -287,22 +287,36 @@ while True:
     print(f"[FIREBASE] Saved Waste ID: {waste_doc_id}")
 
     # Step 8: Generate QR Code
-    qr = qrcode.QRCode(
-        version=2,
-        error_correction=qrcode.constants.ERROR_CORRECT_L,
-        box_size=1,
-        border=0
-    )
-    qr.add_data(waste_doc_id)
-    qr.make(fit=True)
-    matrix = qr.get_matrix()
-    qr_size = len(matrix)
+    # qr = qrcode.QRCode(
+    #     version=2,
+    #     error_correction=qrcode.constants.ERROR_CORRECT_L,
+    #     box_size=1,
+    #     border=0
+    # )
+    # qr.add_data(waste_doc_id)
+    # qr.make(fit=True)
+    # matrix = qr.get_matrix()
+    # qr_size = len(matrix)
 
-    # Step 9: OLED Display Result
+    # Step 8 & 9: Display Result and Generate QR (for recyclable only)
     if is_recyclable:
+        # Show messages
         show_message(["Congratulations!", "Waste recyclable!"], duration=3)
         show_message(["Scan QR code", "to collect points"], duration=3)
 
+        # Generate QR code for recyclable waste only
+        qr = qrcode.QRCode(
+            version=2,
+            error_correction=qrcode.constants.ERROR_CORRECT_L,
+            box_size=1,
+            border=0
+        )
+        qr.add_data(waste_doc_id)
+        qr.make(fit=True)
+        matrix = qr.get_matrix()
+        qr_size = len(matrix)
+
+        # Display QR code on OLED
         scale = min(oled.width // qr_size, oled.height // qr_size)
         shiftx = (oled.width - qr_size * scale) // 2
         shifty = (oled.height - qr_size * scale) // 2 - 8
