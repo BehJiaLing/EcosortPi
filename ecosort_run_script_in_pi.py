@@ -11,6 +11,8 @@ from luma.core.interface.serial import i2c
 from luma.oled.device import sh1106
 import board
 import neopixel
+from cryptography.fernet import Fernet
+from dotenv import load_dotenv 
 
 # ---------------------------------------------------
 # Firebase Setup
@@ -74,12 +76,38 @@ RECYCLE_THRESHOLD = 0.2
 model, classes = load_from_ckpt(MODEL_PATH)
 
 # ---------------------------------------------------
-# Load model 
+# Load model (same as live_cam_pi.py)
 # ---------------------------------------------------
-# MODEL_PATH = "best.pt"
-# INFER_IMG_SIZE = 224
-# RECYCLE_THRESHOLD = 0.2 
-# model, classes = load_from_ckpt(MODEL_PATH)
+MODEL_PATH = "best.pt"
+INFER_IMG_SIZE = 224
+RECYCLE_THRESHOLD = 0.2  # your chosen threshold
+model, classes = load_from_ckpt(MODEL_PATH)
+
+# ---------------------------------------------------
+# Encryption Setup
+# ---------------------------------------------------
+load_dotenv()
+FERNET_KEY = os.environ.get("ECOSORT_SECRET_KEY")
+
+if not FERNET_KEY:
+    raise RuntimeError("ECOSORT_SECRET_KEY not set in environment")
+
+fernet = Fernet(FERNET_KEY.encode() if isinstance(FERNET_KEY, str) else FERNET_KEY)
+
+
+def encrypt_str(value: str) -> str:
+    """Encrypt a string and return base64-safe token."""
+    if value is None:
+        return ""
+    token = fernet.encrypt(value.encode("utf-8"))
+    return token.decode("utf-8")
+
+
+# def decrypt_str(token: str) -> str:
+#     if not token:
+#         return ""
+#     data = fernet.decrypt(token.encode("utf-8"))
+#     return data.decode("utf-8")
 
 # ---------------------------------------------------
 # GPIO + Servo Setup
@@ -234,7 +262,7 @@ while True:
         recycle_prob = float(torch.sigmoid(rlogit).item())
         is_recyclable = int(recycle_prob >= RECYCLE_THRESHOLD)
 
-    # Optional: show top-3 predictions
+    # Optional: show top-3 like live_cam_pi.py
     topk = min(3, len(classes))
     top_probs, top_idx = torch.topk(probs, topk)
     top3 = [(classes[int(i)], float(p)) for p, i in zip(top_probs.tolist(), top_idx.tolist())]
@@ -272,31 +300,27 @@ while True:
         prediction_label = "Non-Recyclable"
         points = 0
 
+    # encrypt sensitive fields
+    enc_waste_class  = encrypt_str(waste_class)
+    enc_prediction   = encrypt_str(prediction_label)
+    enc_confidence   = encrypt_str(str(float(class_conf)))
+    enc_recycle_prob = encrypt_str(str(float(recycle_prob)))
+    enc_image_base64 = encrypt_str(img_base64)
+
     result_data = {
-        "waste_class": waste_class,
-        "prediction": prediction_label,    
-        "confidence": float(class_conf),
-        "recycle_prob": float(recycle_prob),
+        "waste_class":  enc_waste_class,
+        "prediction":   enc_prediction,
+        "confidence":   enc_confidence,
+        "recycle_prob": enc_recycle_prob,
+        "image_base64":        enc_image_base64,
         "timestamp": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-        "image_base64": img_base64,
         "points": points,
         "collected": False
     }
+
     doc_ref = db.collection("waste_data").add(result_data)
     waste_doc_id = doc_ref[1].id
     print(f"[FIREBASE] Saved Waste ID: {waste_doc_id}")
-
-    # Step 8: Generate QR Code
-    # qr = qrcode.QRCode(
-    #     version=2,
-    #     error_correction=qrcode.constants.ERROR_CORRECT_L,
-    #     box_size=1,
-    #     border=0
-    # )
-    # qr.add_data(waste_doc_id)
-    # qr.make(fit=True)
-    # matrix = qr.get_matrix()
-    # qr_size = len(matrix)
 
     # Step 8 & 9: Display Result and Generate QR (for recyclable only)
     if is_recyclable:
